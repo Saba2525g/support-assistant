@@ -1,0 +1,35 @@
+// src/routes/dialed.js
+import { Router } from 'express';
+import { issabelPool } from '../config/db.js';
+
+const router = Router();
+let cache = { data: null, ts: 0 };
+const CACHE_MS = 30_000;
+
+router.get('/', async (req, res) => {
+  try {
+    if (cache.data && Date.now() - cache.ts < CACHE_MS) {
+      return res.json(cache.data);
+    }
+
+    console.log('Running dialed query...');
+    const [rows] = await issabelPool.query(`
+      SELECT calldate, cnum, dst, lastapp, disposition, duration, billsec 
+      FROM cdr 
+      WHERE outbound_cnam IS NOT NULL 
+        AND outbound_cnam <> '' 
+        AND lastapp <> 'Playback'
+      ORDER BY calldate DESC 
+      LIMIT 100
+    `);
+
+    console.log(`Dialed query finished. Found ${rows.length} rows.`);
+    cache = { data: rows, ts: Date.now() };
+    res.json(rows);
+  } catch (err) {
+    console.error('DIALED ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
